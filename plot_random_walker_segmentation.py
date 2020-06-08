@@ -97,7 +97,7 @@ def plantSeed(image):
     seeds = np.zeros(image.shape, dtype='uint8')
     image = cv2.cvtColor(image.astype('float32'), cv2.COLOR_GRAY2RGB)
     print('converted to gray with cv2')
-    image = cv2.resize(image, (0, 0), fx=SF // 10, fy=SF // 10)
+    image = cv2.resize(image, (0, 0), fx=SF, fy=SF)
     print('resized with cv2', image.shape)
     radius = image.shape[0] // 50
     thickness = -1  # fill the whole circle
