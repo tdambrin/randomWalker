@@ -29,16 +29,11 @@ from skimage.data import binary_blobs
 from skimage.exposure import rescale_intensity
 import skimage
 from skimage.color import rgb2gray
-
+import Tkinter
 import cv2
 from random import randint
 
-# ici
-OBJCOLOR, BKGCOLOR = (0, 0, 255), (0, 255, 0)
-OBJCODE, BKGCODE = 1, 2
-OBJ, BKG = "OBJ", "BKG"
-
-CUTCOLOR = (0, 0, 255)
+CUTCOLOR = (255, 0, 0)
 
 INTTOCOLOR = {
     1: (255, 0, 0),
@@ -49,35 +44,40 @@ INTTOCOLOR = {
 }
 
 SOURCE, SINK = -2, -1
-SF = 10  # scale factor
+#SCREENWIDTH = Tkinter.Tk().winfo_screenmmwidth()
+SF = 10 #scale factor
 LOADSEEDS = False
 
 
 def plantSeed(image):
-    def drawLines(x, y, seedN):
-        color = INTTOCOLOR[seedN]
+    def drawLines(x, y, seedN, seedColor):
+        #color = INTTOCOLOR[seedN]
         code = seedN
-        cv2.circle(image, (x, y), radius, color, thickness)
+        cv2.circle(image, (x, y), radius, INTTOCOLOR[code], thickness)
         cv2.circle(seeds, (x // SF, y // SF), radius // SF, code, thickness)
         # seeds[y//SF][x//SF] = code
 
-    def onMouse(event, x, y, flags, seedN):
+    def onMouse(event, x, y, flags, params):
         global drawing
+        seedN = params[0]
+        seedColor = params[1]
         if event == cv2.EVENT_LBUTTONDOWN:
             drawing = True
-            drawLines(x, y, seedN)
+            drawLines(x, y, seedN, seedColor)
         elif event == cv2.EVENT_MOUSEMOVE and drawing:
-            drawLines(x, y, seedN)
+            drawLines(x, y, seedN, seedColor)
         elif event == cv2.EVENT_LBUTTONUP:
             drawing = False
 
     def paintSeeds(seedingN):
+        rgb = np.random.random_integers(0, 256, 3)
+        rgb[2] = 0
         alldone = False
         global drawing
         drawing = False
         windowname = "Planting seeds, enter : next label, del : previous label"
         cv2.namedWindow(windowname, cv2.WINDOW_NORMAL)
-        cv2.setMouseCallback(windowname, onMouse, seedingN)
+        cv2.setMouseCallback(windowname, onMouse, (seedingN, rgb))
         while (1):
             cv2.imshow(windowname, image)
             pressed = cv2.waitKey(33) & 0xFF
@@ -96,8 +96,10 @@ def plantSeed(image):
 
     seeds = np.zeros(image.shape, dtype='uint8')
     image = cv2.cvtColor(image.astype('float32'), cv2.COLOR_GRAY2RGB)
-    image = cv2.resize(image, (0, 0), fx=SF, fy=SF)
-    radius = image.shape[0] // 30
+    print('converted to gray with cv2')
+    image = cv2.resize(image, (0, 0), fx=SF // 10, fy=SF // 10)
+    print('resized with cv2', image.shape)
+    radius = image.shape[0] // 50
     thickness = -1  # fill the whole circle
     global drawing
     drawing = False
@@ -210,7 +212,8 @@ def toPlot(initData, markers, labels):
     plot_markers = cv2.cvtColor(initData.astype('float32'), cv2.COLOR_GRAY2RGB)
     divIndexes = getDivisionIndexes(labels)
     for ind in divIndexes:
-        segmentedImg[ind[0]][ind[1]] = np.array([255, 0, 0])
+        #segmentedImg[ind[0]][ind[1]] = np.array([255, 0, 0])
+        segmentedImg[ind[0]][ind[1]] = CUTCOLOR
     for i, raw in enumerate(markers):
         for j, cell in enumerate(raw):
             if cell != 0:
@@ -221,7 +224,7 @@ def toPlot(initData, markers, labels):
 if __name__ == '__main__':
     # Run random walker algorithm
     initData = rgb2gray(skimage.data.astronaut())
-    initData = introduceNoise(initData, 0.1)
+    #initData = introduceNoise(initData, 0.1)
     data, markers = generateInput(initData)
     labels = random_walker(data, markers, mode='bf')
     segmented, plMarkers = toPlot(initData, markers, labels)
