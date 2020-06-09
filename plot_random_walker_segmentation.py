@@ -11,11 +11,6 @@ so that diffusion is difficult across high gradients. The label of each unknown
 pixel is attributed to the label of the known marker that has the highest
 probability to be reached first during this diffusion process.
 
-In this example, two phases are clearly visible, but the data are too
-noisy to perform the segmentation from the histogram only. We determine
-markers of the two phases from the extreme tails of the histogram of gray
-values, and use the random walker for the segmentation.
-
 .. [1] *Random walks for image segmentation*, Leo Grady, IEEE Trans. Pattern
        Anal. Mach. Intell. 2006 Nov; 28(11):1768-83 :DOI:`10.1109/TPAMI.2006.233`
 
@@ -29,7 +24,7 @@ from skimage.data import binary_blobs
 from skimage.exposure import rescale_intensity
 import skimage
 from skimage.color import rgb2gray
-import Tkinter
+#import Tkinter
 import cv2
 from random import randint
 
@@ -51,10 +46,10 @@ LOADSEEDS = False
 
 def plantSeed(image):
     def drawLines(x, y, seedN, seedColor):
-        #color = INTTOCOLOR[seedN]
+        color = INTTOCOLOR[seedN]
         code = seedN
-        cv2.circle(image, (x, y), radius, INTTOCOLOR[code], thickness)
-        cv2.circle(seeds, (x // SF, y // SF), radius // SF, code, thickness)
+        cv2.circle(localImg, (x, y), radius, color, thickness)
+        cv2.circle(seeds, (x, y), radius, code, thickness)
         # seeds[y//SF][x//SF] = code
 
     def onMouse(event, x, y, flags, params):
@@ -71,6 +66,7 @@ def plantSeed(image):
 
     def paintSeeds(seedingN):
         rgb = np.random.random_integers(0, 256, 3)
+        rgb[1] = 0
         rgb[2] = 0
         alldone = False
         global drawing
@@ -79,7 +75,7 @@ def plantSeed(image):
         cv2.namedWindow(windowname, cv2.WINDOW_NORMAL)
         cv2.setMouseCallback(windowname, onMouse, (seedingN, rgb))
         while (1):
-            cv2.imshow(windowname, image)
+            cv2.imshow(windowname, localImg)
             pressed = cv2.waitKey(33) & 0xFF
             if pressed == 27:
                 alldone = True
@@ -93,13 +89,18 @@ def plantSeed(image):
                     break
         cv2.destroyAllWindows()
         return alldone, seedingN
-
-    seeds = np.zeros(image.shape, dtype='uint8')
-    image = cv2.cvtColor(image.astype('float32'), cv2.COLOR_GRAY2RGB)
-    print('converted to gray with cv2')
-    image = cv2.resize(image, (0, 0), fx=SF, fy=SF)
-    print('resized with cv2', image.shape)
-    radius = image.shape[0] // 50
+    localImg = image.copy()
+    initially_gray = len(localImg.shape) < 3
+    if initially_gray:
+        localImg = cv2.cvtColor(localImg.astype('float32'), cv2.COLOR_GRAY2RGB)
+    #image = cv2.resize(image, (0, 0), fx=SF, fy=SF)
+    localImg = cv2.resize(localImg, (512, 512))
+    localImg = localImg.astype('float32')
+    returnImg = localImg.copy()
+    if initially_gray:
+        returnImg = rgb2gray(returnImg)
+    seeds = np.zeros(returnImg.shape, dtype='uint8')
+    radius = localImg.shape[0] // 50
     thickness = -1  # fill the whole circle
     global drawing
     drawing = False
@@ -112,7 +113,7 @@ def plantSeed(image):
     seeds[image > 0.8] = 1
     seeds[image < 0.3] = 2'''
     # print(seeds)
-    return seeds, image
+    return seeds, returnImg
 
 
 # toIci
@@ -127,7 +128,8 @@ def containsOnes(tab):
 def generateInput(img):
     # Generate noisy synthetic data
     # data = skimage.img_as_float(binary_blobs(length=128, seed=1))
-    data = rgb2gray(img)
+    #data = rgb2gray(img)
+    data = img.copy()
     data = skimage.img_as_float(data)
     print(data[0][0])
     # data = cv2.resize(data, dsize=(20,20))
@@ -148,33 +150,52 @@ def generateInput(img):
     markers[data > 0.95] = 2'''
 
     # return data, markers
-    markers, seeded = plantSeed(data)
-    return data, markers
+    markers, formated = plantSeed(data)
+    return formated, markers
 
 
-def introduceNoise(img, sigma):
-    res = img
-    res += np.random.normal(loc=0, scale=sigma, size=res.shape)
+def introduceNoise(img, sigma, color):
+    res = img.copy()
+    if not color:
+        res = np.add(np.random.normal(loc=0, scale=sigma, size=res.shape), res, casting='unsafe')
+    else:
+        res = np.add(np.random.normal(loc=0, scale=sigma, size=res.shape), res, casting='unsafe')
     return res
 
 
 def imgMax(image):
-    res = image[0].max()
-    for i in range(image.shape[0]):
-        if image[i].max() > res:
-            res = image[i].max()
+    if len(image.shape) == 3:
+        res = image[0][0]
+        for i, raw in enumerate(image):
+            for j, cell in enumerate(raw):
+                if sum(cell) > sum(res):
+                    res = cell
+
+    else:
+        res = image[0].max()
+        for i, raw in enumerate(image):
+            if raw.max() > res:
+                res = raw.max()
     return res
 
 
 def imgMin(image):
-    res = image[0].min()
-    for i in range(image.shape[0]):
-        if image[i].min() > res:
-            res = image[i].min()
+    if len(image.shape) == 3:
+        res = image[0][0]
+        for i, raw in enumerate(image):
+            for j, cell in enumerate(raw):
+                if sum(cell) < sum(res):
+                    res = cell
+
+    else:
+        res = image[0].min()
+        for i, raw in enumerate(image):
+            if raw.min() < res:
+                res = raw.min()
     return res
 
 
-def plot_res(data, markers, labels):
+def plot_res(data, markers, labels, algo):
     # Plot results
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(8, 3.2),
                                         sharex=True, sharey=True)
@@ -189,35 +210,47 @@ def plot_res(data, markers, labels):
     ax3.set_title('Segmentation')
 
     fig.tight_layout()
-    plt.savefig('results.png', format='png')
+    plt.savefig('results'+algo+'.png', format='png')
     plt.show()
 
 def getDivisionIndexes(labels):
     neighborsRelativeIndexes = [(0, -1), (-1, 0), (0, 1), (1, 0)]
     res = []
+    threeD = len(labels.shape) == 3
     for i, raw in enumerate(labels):
         for j, cell in enumerate(raw):
             assigned = cell
             try:
                 for k in range(4):
-                    if labels[i + neighborsRelativeIndexes[k][0]][j + neighborsRelativeIndexes[k][1]] != cell:
-                        res.append((i, j))
+                    if not threeD:
+                        if labels[i + neighborsRelativeIndexes[k][0]][j + neighborsRelativeIndexes[k][1]] != cell:
+                            res.append((i, j))
+                    else:
+                        if labels[i + neighborsRelativeIndexes[k][0]][j + neighborsRelativeIndexes[k][1]][0] != cell[0]:
+                            res.append((i, j))
             except IndexError:
                 pass
     return res
 
 
 def toPlot(initData, markers, labels):
-    segmentedImg = cv2.cvtColor(initData.astype('float32'), cv2.COLOR_GRAY2RGB)
-    plot_markers = cv2.cvtColor(initData.astype('float32'), cv2.COLOR_GRAY2RGB)
+    if len(initData.shape) < 3:
+        segmentedImg = cv2.cvtColor(initData.astype('float32'), cv2.COLOR_GRAY2RGB)
+        plot_markers = cv2.cvtColor(initData.astype('float32'), cv2.COLOR_GRAY2RGB)
+    else:
+        segmentedImg = initData.copy()
+        plot_markers = initData.copy()
+    #print('LABELS', labels)
     divIndexes = getDivisionIndexes(labels)
     for ind in divIndexes:
         #segmentedImg[ind[0]][ind[1]] = np.array([255, 0, 0])
         segmentedImg[ind[0]][ind[1]] = CUTCOLOR
     for i, raw in enumerate(markers):
         for j, cell in enumerate(raw):
-            if cell != 0:
+            if type(cell) == np.uint8 and cell != 0:
                 plot_markers[i][j] = INTTOCOLOR[cell]
+            elif type(cell) != np.uint8 and cell[0] != 0:
+                plot_markers[i][j] = INTTOCOLOR[cell[0]]
     return segmentedImg, plot_markers
 
 
@@ -226,6 +259,6 @@ if __name__ == '__main__':
     initData = rgb2gray(skimage.data.astronaut())
     #initData = introduceNoise(initData, 0.1)
     data, markers = generateInput(initData)
-    labels = random_walker(data, markers, mode='bf')
+    labels = random_walker(data, markers, mode='cg_mg')
     segmented, plMarkers = toPlot(initData, markers, labels)
     plot_res(data, plMarkers, segmented)
