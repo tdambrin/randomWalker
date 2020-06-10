@@ -89,6 +89,7 @@ def plantSeed(image):
                     break
         cv2.destroyAllWindows()
         return alldone, seedingN
+
     localImg = image.copy()
     initially_gray = len(localImg.shape) < 3
     if initially_gray:
@@ -115,23 +116,33 @@ def plantSeed(image):
     # print(seeds)
     return seeds, returnImg
 
-
-# toIci
-
 def containsOnes(tab):
     for elem in tab:
         if 1 in elem:
             return True
     return False
 
+def compare(inf):
+    if inf:
+        return lambda a, b: a < b
+    else:
+        return lambda a, b: a > b
 
-def generateInput(img):
+
+def mark(img, markers, label, threshold, inf):
+    cmp = compare(inf)
+    for i, raw in enumerate(img):
+        for j, cell in enumerate(raw):
+            if cmp(cell, threshold):
+                markers[i][j] = label
+    return markers
+
+def generateInput(img, autoseed):
     # Generate noisy synthetic data
     # data = skimage.img_as_float(binary_blobs(length=128, seed=1))
     #data = rgb2gray(img)
     data = img.copy()
-    data = skimage.img_as_float(data)
-    print(data[0][0])
+    #data = skimage.img_as_float(data)
     # data = cv2.resize(data, dsize=(20,20))
     # data = rescale_intensity(data, in_range=(0.25,0.9), out_range=(-1, 1))
     print('RANGE : ', imgMax(data), imgMin(data))
@@ -149,8 +160,19 @@ def generateInput(img):
     markers[data < -0.95] = 1
     markers[data > 0.95] = 2'''
 
+
     # return data, markers
-    markers, formated = plantSeed(data)
+    if not autoseed:
+        markers, formated = plantSeed(data)
+    else:
+        formated = img.copy()
+        formated = cv2.resize(formated.astype('float32'), (512, 512))
+        markers = np.zeros(formated.shape, dtype='uint8')
+        minval = imgMin(img)
+        maxval = imgMax(img)
+        markers = mark(formated, markers, 1, ((maxval - minval) / 10), True)
+        markers = mark(formated, markers, 3, maxval - ((maxval - minval) / 5), False)
+
     return formated, markers
 
 
