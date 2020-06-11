@@ -43,10 +43,14 @@ SOURCE, SINK = -2, -1
 SF = 10 #scale factor
 LOADSEEDS = False
 
+class AddedToAlreadyExisting(Exception):
+    """ class used when autoseeding from local intensities, indicate that a newly found center is added to set of pixels
+    corresponding to an already found label """
+    pass
 
 def plantSeed(image):
     def drawLines(x, y, seedN, seedColor):
-        color = INTTOCOLOR[seedN]
+        color = INTTOCOLOR.get(seedN, (255, 255, 255))
         code = seedN
         cv2.circle(localImg, (x, y), radius, color, thickness)
         cv2.circle(seeds, (x, y), radius, code, thickness)
@@ -129,7 +133,7 @@ def compare(inf):
         return lambda a, b: a > b
 
 
-def mark(img, markers, label, threshold, inf):
+def markFromThreshold(img, markers, label, threshold, inf):
     cmp = compare(inf)
     for i, raw in enumerate(img):
         for j, cell in enumerate(raw):
@@ -137,13 +141,57 @@ def mark(img, markers, label, threshold, inf):
                 markers[i][j] = label
     return markers
 
+def markFromLocalIntensity(img, markers, regionNumber):
+    print('min : {}'.format(imgMin(img)))
+    print('max : {}'.format(imgMax(img)))
+    indexAndIntensity = {}
+    regionAdded = 0
+    #get the center of 10x10 regions with similar values
+    for i, raw in enumerate(img):
+        for j, cell in enumerate(raw):
+            localSimilar = True #True if neighoring pixels have a close intensity
+            try:
+                for h in range(-5, 5):
+                    for v in range(-5, 5):
+                        if abs(cell - img[i + h][j + v]) > 0.2:
+                            raise IndexError
+            except IndexError:
+                localSimilar = False
+
+            if localSimilar:
+                try:
+                    for _, alreadyIn in enumerate(indexAndIntensity.keys()):
+                        if abs(alreadyIn - cell) < 0.1: #the newly found center may correspond to an already detected intensity
+                            indexAndIntensity[alreadyIn].append((i, j))
+                            raise AddedToAlreadyExisting
+                    if regionAdded < regionNumber:
+                        indexAndIntensity[cell] = []
+                        indexAndIntensity[cell].append((i, j))
+                        regionAdded += 1
+                    else:
+                        closer = indexAndIntensity.keys()[0]
+                        for _, intensity in enumerate(indexAndIntensity.keys()):
+                            if abs(cell - intensity) < abs(cell - closer):
+                                closer = intensity
+                        indexAndIntensity[closer].append((i, j))
+                except AddedToAlreadyExisting:
+                    pass
+
+    print('INDEXINTE len : ', len(indexAndIntensity.keys()), len(indexAndIntensity[indexAndIntensity.keys()[0]]))
+    print(indexAndIntensity.keys())
+    #approcimate the number of labels based on the following hypothesis : one range of intensity values => one label
+    for labelNumber, intensity in enumerate(indexAndIntensity.keys()):
+        for _, center in enumerate(indexAndIntensity[intensity]):
+            markers[center[0]][center[1]] = labelNumber + 1
+        print('New labdel number = ', labelNumber + 1)
+    return markers
+
 def generateInput(img, autoseed):
     # Generate noisy synthetic data
     # data = skimage.img_as_float(binary_blobs(length=128, seed=1))
     #data = rgb2gray(img)
     data = img.copy()
-    #data = skimage.img_as_float(data)
-    # data = cv2.resize(data, dsize=(20,20))
+    data = skimage.img_as_float(data)
     # data = rescale_intensity(data, in_range=(0.25,0.9), out_range=(-1, 1))
     print('RANGE : ', imgMax(data), imgMin(data))
 
@@ -168,10 +216,13 @@ def generateInput(img, autoseed):
         formated = img.copy()
         formated = cv2.resize(formated.astype('float32'), (512, 512))
         markers = np.zeros(formated.shape, dtype='uint8')
-        minval = imgMin(img)
+        print('Autoseeding from local i')
+        markers = markFromLocalIntensity(formated, markers, 3)
+        print('Autoseeding over')
+        '''minval = imgMin(img)
         maxval = imgMax(img)
-        markers = mark(formated, markers, 1, ((maxval - minval) / 10), True)
-        markers = mark(formated, markers, 3, maxval - ((maxval - minval) / 5), False)
+        markers = markFromThreshold(formated, markers, 1, ((maxval - minval) / 10), True)
+        markers = markFromThreshold(formated, markers, 3, maxval - ((maxval - minval) / 5), False)'''
 
     return formated, markers
 
@@ -192,7 +243,6 @@ def imgMax(image):
             for j, cell in enumerate(raw):
                 if sum(cell) > sum(res):
                     res = cell
-
     else:
         res = image[0].max()
         for i, raw in enumerate(image):
@@ -223,7 +273,7 @@ def plot_res(data, markers, labels, algo):
                                         sharex=True, sharey=True)
     ax1.imshow(data, cmap='gray')
     ax1.axis('off')
-    ax1.set_title('Noisy data')
+    ax1.set_title('Input data')
     ax2.imshow(markers, cmap='magma')
     ax2.axis('off')
     ax2.set_title('Markers')
@@ -232,7 +282,11 @@ def plot_res(data, markers, labels, algo):
     ax3.set_title('Segmentation')
 
     fig.tight_layout()
-    plt.savefig('results'+algo+'.png', format='png')
+    path = os.getcwd()
+    path = path.split('random')[0]
+    path += '/images/segmented/'
+    print(path)
+    plt.savefig(path + 'results'+algo+'.png', format='png')
     plt.show()
 
 def getDivisionIndexes(labels):
@@ -270,9 +324,9 @@ def toPlot(initData, markers, labels):
     for i, raw in enumerate(markers):
         for j, cell in enumerate(raw):
             if type(cell) == np.uint8 and cell != 0:
-                plot_markers[i][j] = INTTOCOLOR[cell]
+                plot_markers[i][j] = INTTOCOLOR.get(cell, (255, 255, 255))
             elif type(cell) != np.uint8 and cell[0] != 0:
-                plot_markers[i][j] = INTTOCOLOR[cell[0]]
+                plot_markers[i][j] = INTTOCOLOR.get(cell[0], (255, 255, 255))
     return segmentedImg, plot_markers
 
 
