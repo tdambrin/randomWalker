@@ -272,11 +272,17 @@ def plot_res(data, markers, labels, algo, segparam):
         global newsegparam
         newsegparam += incordec[algo]
         plt.close(fig)
+        plt.close(btns)
 
     def recomputeDec(event):
         global newsegparam
         newsegparam -= incordec[algo]
         plt.close(fig)
+        plt.close(btns)
+
+    def closeFigs(event):
+        plt.close(fig)
+        plt.close(btns)
 
     global newsegparam
     newsegparam = segparam
@@ -285,7 +291,7 @@ def plot_res(data, markers, labels, algo, segparam):
         'WD': 20
     }
     # Plot results
-    fig, ((ax1, ax2, ax3), (btn1, btn2, btn3)) = plt.subplots(2, 3, figsize=(8, 3.2), sharex=True, sharey=True)
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(8, 3.2), sharex=True, sharey=True)
     ax1.imshow(data, cmap='gray')
     ax1.axis('off')
     ax1.set_title('Input data')
@@ -295,27 +301,32 @@ def plot_res(data, markers, labels, algo, segparam):
     ax3.imshow(labels, cmap='gray')
     ax3.axis('off')
     ax3.set_title('Segmentation')
-
-    btn1.axis('off')
-    btn2.axis('off')
-    btn3.axis('off')
-    bredoInc = Button(ax=btn1,
-                   label='RedoInc',
-                   color='teal',
-                   hovercolor='green')
-    bredoInc.on_clicked(recomputeInc)
-
-    bredoDec = Button(ax=btn2,
-                   label='RedoDec',
-                   color='teal',
-                   hovercolor='green')
-    bredoDec.on_clicked(recomputeDec)
-
     fig.tight_layout()
     path = os.getcwd()
     path = path.split('random')[0]
     path += '/images/segmented/'
     plt.savefig(path + 'results'+algo+'.png', format='png')
+
+    btns, (btn1, btn2, btn3) = plt.subplots(3, 1, figsize=(2, 5), facecolor='#c0d6e4')
+    bredoInc = Button(ax=btn1,
+                      label='RedoInc',
+                      color='#b96d56',
+                      hovercolor='#b96dff')
+    bredoInc.color = 'teal'
+    bredoInc.on_clicked(recomputeInc)
+
+    bredoDec = Button(ax=btn2,
+                      label='RedoDec',
+                      color='#b96d56',
+                      hovercolor='#b96dff')
+    bredoDec.on_clicked(recomputeDec)
+
+    bclose = Button(ax=btn3,
+                    label='Close',
+                    color='#b96d56',
+                    hovercolor='#b96dff')
+    bclose.on_clicked(closeFigs)
+
     plt.show()
     return newsegparam
 
