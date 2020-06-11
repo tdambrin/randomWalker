@@ -27,6 +27,7 @@ from skimage.color import rgb2gray
 #import Tkinter
 import cv2
 from random import randint
+from matplotlib.widgets import Button
 
 CUTCOLOR = (255, 0, 0)
 
@@ -266,11 +267,25 @@ def imgMin(image):
                 res = raw.min()
     return res
 
+def plot_res(data, markers, labels, algo, segparam):
+    def recomputeInc(event):
+        global newsegparam
+        newsegparam += incordec[algo]
+        plt.close(fig)
 
-def plot_res(data, markers, labels, algo):
+    def recomputeDec(event):
+        global newsegparam
+        newsegparam -= incordec[algo]
+        plt.close(fig)
+
+    global newsegparam
+    newsegparam = segparam
+    incordec = { #random walker's and watershed's params doesnt have the same sensibility
+        'RW': 100,
+        'WD': 20
+    }
     # Plot results
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(8, 3.2),
-                                        sharex=True, sharey=True)
+    fig, ((ax1, ax2, ax3), (btn1, btn2, btn3)) = plt.subplots(2, 3, figsize=(8, 3.2), sharex=True, sharey=True)
     ax1.imshow(data, cmap='gray')
     ax1.axis('off')
     ax1.set_title('Input data')
@@ -281,13 +296,28 @@ def plot_res(data, markers, labels, algo):
     ax3.axis('off')
     ax3.set_title('Segmentation')
 
+    btn1.axis('off')
+    btn2.axis('off')
+    btn3.axis('off')
+    bredoInc = Button(ax=btn1,
+                   label='RedoInc',
+                   color='teal',
+                   hovercolor='green')
+    bredoInc.on_clicked(recomputeInc)
+
+    bredoDec = Button(ax=btn2,
+                   label='RedoDec',
+                   color='teal',
+                   hovercolor='green')
+    bredoDec.on_clicked(recomputeDec)
+
     fig.tight_layout()
     path = os.getcwd()
     path = path.split('random')[0]
     path += '/images/segmented/'
-    print(path)
     plt.savefig(path + 'results'+algo+'.png', format='png')
     plt.show()
+    return newsegparam
 
 def getDivisionIndexes(labels):
     neighborsRelativeIndexes = [(0, -1), (-1, 0), (0, 1), (1, 0)]
