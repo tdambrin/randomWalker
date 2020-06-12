@@ -267,7 +267,7 @@ def imgMin(image):
                 res = raw.min()
     return res
 
-def plot_res(data, markers, labels, algo, segparam):
+def plot_res(data, markers, labels, instances, algo, segparam):
     def recomputeInc(event):
         global newsegparam
         newsegparam += incordec[algo]
@@ -288,10 +288,10 @@ def plot_res(data, markers, labels, algo, segparam):
     newsegparam = segparam
     incordec = { #random walker's and watershed's params doesnt have the same sensibility
         'RW': 100,
-        'WD': 20
+        'WD': 0.5
     }
     # Plot results
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(8, 3.2), sharex=True, sharey=True)
+    fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(10, 4), sharex=True, sharey=True)
     ax1.imshow(data, cmap='gray')
     ax1.axis('off')
     ax1.set_title('Input data')
@@ -301,6 +301,9 @@ def plot_res(data, markers, labels, algo, segparam):
     ax3.imshow(labels, cmap='gray')
     ax3.axis('off')
     ax3.set_title('Segmentation')
+    ax4.imshow(instances)
+    ax4.axis('off')
+    ax4.set_title('Classes')
     fig.tight_layout()
     path = os.getcwd()
     path = path.split('random')[0]
@@ -353,22 +356,27 @@ def getDivisionIndexes(labels):
 def toPlot(initData, markers, labels):
     if len(initData.shape) < 3:
         segmentedImg = cv2.cvtColor(initData.astype('float32'), cv2.COLOR_GRAY2RGB)
+        instances = cv2.cvtColor(initData.astype('float32'), cv2.COLOR_GRAY2RGB)
         plot_markers = cv2.cvtColor(initData.astype('float32'), cv2.COLOR_GRAY2RGB)
     else:
         segmentedImg = initData.copy()
+        instances = initData.copy()
         plot_markers = initData.copy()
     #print('LABELS', labels)
     divIndexes = getDivisionIndexes(labels)
     for ind in divIndexes:
-        #segmentedImg[ind[0]][ind[1]] = np.array([255, 0, 0])
         segmentedImg[ind[0]][ind[1]] = CUTCOLOR
     for i, raw in enumerate(markers):
         for j, cell in enumerate(raw):
-            if type(cell) == np.uint8 and cell != 0:
-                plot_markers[i][j] = INTTOCOLOR.get(cell, (255, 255, 255))
-            elif type(cell) != np.uint8 and cell[0] != 0:
-                plot_markers[i][j] = INTTOCOLOR.get(cell[0], (255, 255, 255))
-    return segmentedImg, plot_markers
+            if type(cell) == np.uint8:
+                instances[i][j] = INTTOCOLOR.get(labels[i][j], (0, 0, 0))
+                if cell != 0:
+                    plot_markers[i][j] = INTTOCOLOR.get(cell, (255, 255, 255))
+            elif type(cell) != np.uint8:
+                instances[i][j] = INTTOCOLOR.get(labels[i][j][0], (0, 0, 0))
+                if cell[0] != 0:
+                    plot_markers[i][j] = INTTOCOLOR.get(cell[0], (255, 255, 255))
+    return segmentedImg, plot_markers, instances
 
 
 if __name__ == '__main__':
