@@ -55,6 +55,8 @@ def plantSeed(image):
         code = seedN
         cv2.circle(localImg, (x, y), radius, color, thickness)
         cv2.circle(seeds, (x, y), radius, code, thickness)
+        # localImg[y][x] = color
+        # seeds[y][x] = code
         # seeds[y//SF][x//SF] = code
 
     def onMouse(event, x, y, flags, params):
@@ -187,6 +189,11 @@ def markFromLocalIntensity(img, markers, regionNumber):
         print('New labdel number = ', labelNumber + 1)
     return markers
 
+def markFromHisto(markers, image, peaks):
+    for code, onePeak in enumerate(peaks):
+        markers[ abs(image - onePeak) < 0.1] = code+1
+    return markers
+
 def generateInput(img, autoseed):
     # Generate noisy synthetic data
     # data = skimage.img_as_float(binary_blobs(length=128, seed=1))
@@ -214,16 +221,42 @@ def generateInput(img, autoseed):
     if not autoseed:
         markers, formated = plantSeed(data)
     else:
+        localI = False
+        fromThreshold = False
+
         formated = img.copy()
         formated = cv2.resize(formated.astype('float32'), (512, 512))
         markers = np.zeros(formated.shape, dtype='uint8')
         print('Autoseeding from local i')
-        markers = markFromLocalIntensity(formated, markers, 3)
-        print('Autoseeding over')
-        '''minval = imgMin(img)
-        maxval = imgMax(img)
-        markers = markFromThreshold(formated, markers, 1, ((maxval - minval) / 10), True)
-        markers = markFromThreshold(formated, markers, 3, maxval - ((maxval - minval) / 5), False)'''
+        if localI:
+            markers = markFromLocalIntensity(formated, markers, 3)
+            print('Autoseeding over')
+
+        elif fromThreshold:
+            '''minval = imgMin(img)
+            maxval = imgMax(img)
+            markers = markFromThreshold(formated, markers, 1, ((maxval - minval) / 10), True)
+            markers = markFromThreshold(formated, markers, 3, maxval - ((maxval - minval) / 5), False)'''
+        else: # from histogram
+            hist, bins_center = skimage.exposure.histogram(formated)
+            peaks = [bins_center[i] for i in range(len(hist)) if hist[i] > 10000]
+            print('PEAKS : {}'.format(peaks))
+            if len(peaks) == 0:
+                maxOccurence = hist.max()
+                peaks = [bins_center[i] for i in range(len(hist)) if hist[i] == maxOccurence]
+            if len(peaks) == 1:
+                secondMaxOcc = sorted(hist)[-2]
+                toAppend = [bins_center[i] for i in range(len(hist)) if hist[i] == secondMaxOcc]
+                peaks.append(toAppend[0])
+            markers = markFromHisto(np.zeros(formated.shape, dtype=np.uint8), formated, peaks)
+
+    '''print(hist)
+    print(bins_center)
+    plt.figure(figsize=(9, 4))
+    plt.subplot(133)
+    plt.plot(bins_center, hist, lw=2)
+    plt.tight_layout()
+    plt.show()'''
 
     return formated, markers
 
@@ -288,7 +321,7 @@ def plot_res(data, markers, labels, instances, algo, segparam):
     newsegparam = segparam
     incordec = { #random walker's and watershed's params doesnt have the same sensibility
         'RW': 100,
-        'WD': 0.5
+        'WD': 0.01
     }
     # Plot results
     fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(10, 4), sharex=True, sharey=True)
