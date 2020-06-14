@@ -238,16 +238,19 @@ def generateInput(img, autoseed):
             markers = markFromThreshold(formated, markers, 1, ((maxval - minval) / 10), True)
             markers = markFromThreshold(formated, markers, 3, maxval - ((maxval - minval) / 5), False)'''
         else: # from histogram
+            objectsN = 2 #approximated number of objects in the image
             hist, bins_center = skimage.exposure.histogram(formated)
             peaks = [bins_center[i] for i in range(len(hist)) if hist[i] > 10000]
             print('PEAKS : {}'.format(peaks))
-            if len(peaks) == 0:
+            '''if len(peaks) == 0:
                 maxOccurence = hist.max()
-                peaks = [bins_center[i] for i in range(len(hist)) if hist[i] == maxOccurence]
-            if len(peaks) == 1:
-                secondMaxOcc = sorted(hist)[-2]
-                toAppend = [bins_center[i] for i in range(len(hist)) if hist[i] == secondMaxOcc]
+                peaks = [bins_center[i] for i in range(len(hist)) if hist[i] == maxOccurence]'''
+            peaksN = len(peaks)
+            while peaksN < objectsN:
+                notInMaxOcc = sorted(hist)[-(peaksN + 1)]
+                toAppend = [bins_center[i] for i in range(len(hist)) if hist[i] == notInMaxOcc]
                 peaks.append(toAppend[0])
+                peaksN += 1
             markers = markFromHisto(np.zeros(formated.shape, dtype=np.uint8), formated, peaks)
 
     '''print(hist)
