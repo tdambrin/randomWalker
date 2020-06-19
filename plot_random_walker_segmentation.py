@@ -26,6 +26,7 @@ import skimage
 from skimage.color import rgb2gray
 #import Tkinter
 import cv2
+import math
 from random import randint
 from matplotlib.widgets import Button
 
@@ -38,11 +39,9 @@ INTTOCOLOR = {
     4: (0, 255, 255),
     5: (100, 28, 200)
 }
-
-SOURCE, SINK = -2, -1
 #SCREENWIDTH = Tkinter.Tk().winfo_screenmmwidth()
-SF = 10 #scale factor
-LOADSEEDS = False
+
+RADIUS = 10
 
 class AddedToAlreadyExisting(Exception):
     """ class used when autoseeding from local intensities, indicate that a newly found center is added to set of pixels
@@ -53,8 +52,9 @@ def plantSeed(image):
     def drawLines(x, y, seedN, seedColor):
         color = INTTOCOLOR.get(seedN, (255, 255, 255))
         code = seedN
-        cv2.circle(localImg, (x, y), radius, color, thickness)
-        cv2.circle(seeds, (x, y), radius, code, thickness)
+        if RADIUS > 0:
+            cv2.circle(localImg, (x, y), RADIUS, color, thickness)
+            cv2.circle(seeds, (x, y), RADIUS, code, thickness)
         # localImg[y][x] = color
         # seeds[y][x] = code
         # seeds[y//SF][x//SF] = code
@@ -77,6 +77,7 @@ def plantSeed(image):
         rgb[2] = 0
         alldone = False
         global drawing
+        global RADIUS
         drawing = False
         windowname = "Planting seeds, enter : next label, del : previous label"
         cv2.namedWindow(windowname, cv2.WINDOW_NORMAL)
@@ -94,6 +95,13 @@ def plantSeed(image):
                 if seedingN > 1:
                     seedingN -= 1
                     break
+            elif pressed == 43:
+                RADIUS += (RADIUS + 5) // 5 #20 percent increase
+                print(RADIUS)
+            elif pressed == 45:
+                RADIUS -= (RADIUS + 5) // 5 #20 percent decrease
+                print(RADIUS)
+
         cv2.destroyAllWindows()
         return alldone, seedingN
 
@@ -102,13 +110,14 @@ def plantSeed(image):
     if initially_gray:
         localImg = cv2.cvtColor(localImg.astype('float32'), cv2.COLOR_GRAY2RGB)
     #image = cv2.resize(image, (0, 0), fx=SF, fy=SF)
-    localImg = cv2.resize(localImg, (512, 512))
+    #localImg = cv2.resize(localImg, (512, 512))
     localImg = localImg.astype('float32')
     returnImg = localImg.copy()
     if initially_gray:
         returnImg = rgb2gray(returnImg)
-    seeds = np.zeros(returnImg.shape, dtype='uint8')
-    radius = localImg.shape[0] // 50
+    seeds = np.zeros(returnImg.shape, dtype=np.uint8)
+    global RADIUS
+    RADIUS = localImg.shape[0] // 50
     thickness = -1  # fill the whole circle
     global drawing
     drawing = False
@@ -137,11 +146,18 @@ def compare(inf):
 
 
 def markFromThreshold(img, markers, label, threshold, inf):
+    print(threshold)
     cmp = compare(inf)
-    for i, raw in enumerate(img):
-        for j, cell in enumerate(raw):
-            if cmp(cell, threshold):
-                markers[i][j] = label
+    if len(img.shape) < 3:
+        for i, raw in enumerate(img):
+            for j, cell in enumerate(raw):
+                if cmp(cell, threshold):
+                    markers[i][j] = label
+    else:
+        for i, raw in enumerate(img):
+            for j, cell in enumerate(raw):
+                if cmp(sum(cell),threshold):
+                    markers[i][j][0] = label
     return markers
 
 def markFromLocalIntensity(img, markers, regionNumber):
@@ -172,11 +188,11 @@ def markFromLocalIntensity(img, markers, regionNumber):
                         indexAndIntensity[cell].append((i, j))
                         regionAdded += 1
                     else:
-                        closer = indexAndIntensity.keys()[0]
+                        '''closer = indexAndIntensity.keys()[0]
                         for _, intensity in enumerate(indexAndIntensity.keys()):
                             if abs(cell - intensity) < abs(cell - closer):
                                 closer = intensity
-                        indexAndIntensity[closer].append((i, j))
+                        indexAndIntensity[closer].append((i, j))'''
                 except AddedToAlreadyExisting:
                     pass
 
@@ -191,7 +207,36 @@ def markFromLocalIntensity(img, markers, regionNumber):
 
 def markFromHisto(markers, image, peaks):
     for code, onePeak in enumerate(peaks):
-        markers[ abs(image - onePeak) < 0.1] = code+1
+        markers[abs(image - onePeak) < 0.1] = code+1
+    return markers
+
+def markFromHistoAndTopo(img, markers, peaks):
+    added = {}
+    closeRadius = min(img.shape[:2]) // 3 # max distance with which we will mark two pixels belonging to same region
+    minDist = closeRadius // 2 #min distance from boards to be marked
+    print('CLOSE RAD = {}'.format(closeRadius))
+    for onePeak in peaks:
+        added[onePeak] = []
+    for i, raw in enumerate(img):
+        for j, pix in enumerate(raw):
+            try:
+                for code, onePeak in enumerate(peaks):
+                    if abs(pix - onePeak) < 0.1:
+                        if len(added[onePeak]) > 0:
+                            for oneAdded in added[onePeak]:
+                                if math.hypot(i - oneAdded[0], j - oneAdded[1]) < closeRadius:
+                                    if minDist < i < (img.shape[0] - minDist):
+                                        if minDist < j < img.shape[1] - minDist:
+                                            markers[i][j] = code + 1
+                                            added[onePeak].append((i,j))
+                                            raise AddedToAlreadyExisting
+                        elif minDist < i < (img.shape[0] - minDist) :
+                            if minDist < j < img.shape[1] - minDist:
+                                markers[i][j] = code + 1
+                                added[onePeak].append((i, j))
+            except AddedToAlreadyExisting:
+                pass
+
     return markers
 
 def generateInput(img, autoseed):
@@ -223,20 +268,22 @@ def generateInput(img, autoseed):
     else:
         localI = False
         fromThreshold = False
+        histAndTopo = True
 
         formated = img.copy()
-        formated = cv2.resize(formated.astype('float32'), (512, 512))
+        #formated = cv2.resize(formated.astype('float32'), (1024, 1024))
+        formated = formated.astype('float32')
         markers = np.zeros(formated.shape, dtype='uint8')
         print('Autoseeding from local i')
         if localI:
-            markers = markFromLocalIntensity(formated, markers, 3)
+            markers = markFromLocalIntensity(formated, markers, 2)
             print('Autoseeding over')
 
         elif fromThreshold:
-            '''minval = imgMin(img)
+            minval = imgMin(img)
             maxval = imgMax(img)
-            markers = markFromThreshold(formated, markers, 1, ((maxval - minval) / 10), True)
-            markers = markFromThreshold(formated, markers, 3, maxval - ((maxval - minval) / 5), False)'''
+            markers = markFromThreshold(formated, markers, 1, minval + ((maxval - minval) / 10), True)
+            markers = markFromThreshold(formated, markers, 2, maxval - ((maxval - minval) / 10), False)
         else: # from histogram
             objectsN = 2 #approximated number of objects in the image
             hist, bins_center = skimage.exposure.histogram(formated)
@@ -251,7 +298,10 @@ def generateInput(img, autoseed):
                 toAppend = [bins_center[i] for i in range(len(hist)) if hist[i] == notInMaxOcc]
                 peaks.append(toAppend[0])
                 peaksN += 1
-            markers = markFromHisto(np.zeros(formated.shape, dtype=np.uint8), formated, peaks)
+            if histAndTopo:
+                markers = markFromHistoAndTopo(formated, np.zeros(formated.shape, dtype=np.uint8), peaks)
+            else:
+                markers = markFromHisto(np.zeros(formated.shape, dtype=np.uint8), formated, peaks)
 
     '''print(hist)
     print(bins_center)
@@ -275,11 +325,11 @@ def introduceNoise(img, sigma, color):
 
 def imgMax(image):
     if len(image.shape) == 3:
-        res = image[0][0]
+        res = sum(image[0][0])
         for i, raw in enumerate(image):
             for j, cell in enumerate(raw):
-                if sum(cell) > sum(res):
-                    res = cell
+                if sum(cell) > res:
+                    res = sum(cell)
     else:
         res = image[0].max()
         for i, raw in enumerate(image):
@@ -290,12 +340,11 @@ def imgMax(image):
 
 def imgMin(image):
     if len(image.shape) == 3:
-        res = image[0][0]
+        res = sum(image[0][0])
         for i, raw in enumerate(image):
             for j, cell in enumerate(raw):
-                if sum(cell) < sum(res):
-                    res = cell
-
+                if sum(cell) < res:
+                    res = sum(cell)
     else:
         res = image[0].min()
         for i, raw in enumerate(image):
@@ -303,7 +352,7 @@ def imgMin(image):
                 res = raw.min()
     return res
 
-def plot_res(data, markers, labels, instances, algo, segparam):
+def plot_res(data, fileName, markers, segmented, labels, instances, algo, segparam):
     def recomputeInc(event):
         global newsegparam
         newsegparam += incordec[algo]
@@ -334,17 +383,22 @@ def plot_res(data, markers, labels, instances, algo, segparam):
     ax2.imshow(markers, cmap='magma')
     ax2.axis('off')
     ax2.set_title('Markers')
-    ax3.imshow(labels, cmap='gray')
+    ax3.imshow(segmented, cmap='gray')
     ax3.axis('off')
-    ax3.set_title('Segmentation')
+    ax3.set_title('Segmentation, Param = {}'.format(segparam))
     ax4.imshow(instances)
     ax4.axis('off')
     ax4.set_title('Classes')
     fig.tight_layout()
+
+    # Saving results
     path = os.getcwd()
     path = path.split('random')[0]
     path += '/images/segmented/'
-    plt.savefig(path + 'results'+algo+'.png', format='png')
+    plt.savefig(path + 'results' + fileName + algo+'.png', format='png')
+    cv2.imwrite(path + 'mask' + fileName + algo + '.png', instances)
+    cv2.imwrite(path + 'segment' + fileName + algo + '.png', segmented)
+    cv2.imwrite(path + 'labels' + fileName + algo + '.png', labels)
 
     btns, (btn1, btn2, btn3) = plt.subplots(3, 1, figsize=(2, 5), facecolor='#c0d6e4')
     bredoInc = Button(ax=btn1,
@@ -390,7 +444,9 @@ def getDivisionIndexes(labels):
 
 
 def toPlot(initData, markers, labels):
+    colored = True
     if len(initData.shape) < 3:
+        colored = False
         segmentedImg = cv2.cvtColor(initData.astype('float32'), cv2.COLOR_GRAY2RGB)
         instances = cv2.cvtColor(initData.astype('float32'), cv2.COLOR_GRAY2RGB)
         plot_markers = cv2.cvtColor(initData.astype('float32'), cv2.COLOR_GRAY2RGB)
@@ -400,18 +456,26 @@ def toPlot(initData, markers, labels):
         plot_markers = initData.copy()
     #print('LABELS', labels)
     divIndexes = getDivisionIndexes(labels)
+    print(segmentedImg.shape, instances.shape, plot_markers.shape, initData.shape, markers.shape)
     for ind in divIndexes:
-        segmentedImg[ind[0]][ind[1]] = CUTCOLOR
+            segmentedImg[ind[0]][ind[1]] = CUTCOLOR
     for i, raw in enumerate(markers):
         for j, cell in enumerate(raw):
-            if type(cell) == np.uint8:
+            if not colored:
                 instances[i][j] = INTTOCOLOR.get(labels[i][j], (0, 0, 0))
                 if cell != 0:
                     plot_markers[i][j] = INTTOCOLOR.get(cell, (255, 255, 255))
-            elif type(cell) != np.uint8:
-                instances[i][j] = INTTOCOLOR.get(labels[i][j][0], (0, 0, 0))
+            else:
+                try:
+                    instances[i][j] = INTTOCOLOR.get(labels[i][j][0], (0, 0, 0))
+                except IndexError:
+                    pass
                 if cell[0] != 0:
-                    plot_markers[i][j] = INTTOCOLOR.get(cell[0], (255, 255, 255))
+                    try:
+                        plot_markers[i][j] = INTTOCOLOR.get(cell[0], (255, 255, 255))
+                    except IndexError:
+                        pass
+    #instances = skimage.color.label2rgb(labels, initData, kind='avg')
     return segmentedImg, plot_markers, instances
 
 
