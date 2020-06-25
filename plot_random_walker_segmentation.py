@@ -24,6 +24,7 @@ from skimage.data import binary_blobs
 from skimage.exposure import rescale_intensity
 import skimage
 from skimage.color import rgb2gray
+import skimage.filters
 #import Tkinter
 import cv2
 import math
@@ -210,7 +211,7 @@ def markFromHisto(markers, image, peaks):
         markers[abs(image - onePeak) < 0.1] = code+1
     return markers
 
-def markFromHistoAndTopo(img, markers, peaks):
+def markFromHistoAndTopo(img, markers, peaks): # very inefficient at last
     added = {}
     closeRadius = min(img.shape[:2]) // 3 # max distance with which we will mark two pixels belonging to same region
     minDist = closeRadius // 2 #min distance from boards to be marked
@@ -239,6 +240,27 @@ def markFromHistoAndTopo(img, markers, peaks):
 
     return markers
 
+def MarkFromMultiOtsu(img, markers, nRegions):
+    thresholds = skimage.filters.threshold_multiotsu(img, classes=nRegions)
+    for i, thresh in enumerate(thresholds):
+        if i == 0:
+            markers[img < imgMin(img) + 0.5*thresh] = 1
+        elif i == nRegions -1:
+            markers[img<imgMin(img) - 0.5*thresh] = nRegions
+        else:
+            markers[abs(img - thresh) < 0.2] = i + 1
+    return markers
+
+def markFromIsoData(img, markers):
+    if len(img.shape) > 2:
+        raise ValueError('CANNOT USE ISODATA WITH COLORFUL IMAGES')
+    seuils = skimage.filters.threshold_isodata(img, return_all=True)
+    print('SEUILS :',seuils)
+    markers[img < (imgMin(img) + 0.3*seuils[0])] = 1
+    markers[img > (imgMax(img) - 0.3*seuils[0])] = 2
+    return markers
+
+
 def generateInput(img, autoseed):
     # Generate noisy synthetic data
     # data = skimage.img_as_float(binary_blobs(length=128, seed=1))
@@ -266,9 +288,12 @@ def generateInput(img, autoseed):
     if not autoseed:
         markers, formated = plantSeed(data)
     else:
-        localI = False
+        localI = True
         fromThreshold = False
-        histAndTopo = True
+        histAndTopo = False # dont set to true
+        histoOnly = True
+        multiOtsu = False
+        isodata = False
 
         formated = img.copy()
         #formated = cv2.resize(formated.astype('float32'), (1024, 1024))
@@ -300,8 +325,14 @@ def generateInput(img, autoseed):
                 peaksN += 1
             if histAndTopo:
                 markers = markFromHistoAndTopo(formated, np.zeros(formated.shape, dtype=np.uint8), peaks)
-            else:
+            elif histoOnly:
                 markers = markFromHisto(np.zeros(formated.shape, dtype=np.uint8), formated, peaks)
+            elif multiOtsu:
+                markers = MarkFromMultiOtsu(img,markers, 3)
+            elif isodata:
+                markers = markFromIsoData(formated, np.zeros(formated.shape, dtype=np.uint8))
+            else:
+                raise ValueError('MUST SELECT AN AUTO MARKING METHOD')
 
     '''print(hist)
     print(bins_center)
