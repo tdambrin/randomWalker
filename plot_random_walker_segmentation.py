@@ -16,10 +16,10 @@ probability to be reached first during this diffusion process.
 
 """
 from __future__ import division
-import os
+import os, sys, time
 import numpy as np
 import matplotlib.pyplot as plt
-from skimage.segmentation import random_walker
+from skimage.segmentation import random_walker, watershed
 from skimage.data import binary_blobs
 from skimage.exposure import rescale_intensity
 import skimage
@@ -43,6 +43,10 @@ INTTOCOLOR = {
 #SCREENWIDTH = Tkinter.Tk().winfo_screenmmwidth()
 
 RADIUS = 10
+
+NAMESTODATA = {'astronaut': skimage.data.astronaut(),
+               'coins': skimage.data.coins(),
+               'immuno': skimage.data.immunohistochemistry()}
 
 class AddedToAlreadyExisting(Exception):
     """ class used when autoseeding from local intensities, indicate that a newly found center is added to set of pixels
@@ -511,10 +515,119 @@ def toPlot(initData, markers, labels):
 
 
 if __name__ == '__main__':
-    # Run random walker algorithm
-    initData = rgb2gray(skimage.data.astronaut())
-    #initData = introduceNoise(initData, 0.1)
-    data, markers = generateInput(initData)
-    labels = random_walker(data, markers, mode='cg_mg')
-    segmented, plMarkers = toPlot(initData, markers, labels)
-    plot_res(data, plMarkers, segmented)
+    if len(sys.argv) > 1:
+        dataName = sys.argv[1]
+
+        if '.' in dataName:
+            initData = cv2.imread(dataName)
+            '''if initData.size > 512*512:
+                initData = cv2.resize(initData, (512, 512))'''
+        else:
+            initData = skimage.data.astronaut()
+
+    multiC = True
+    colored = True
+    if len(sys.argv) > 2 and sys.argv[2] == 'bw':
+        initData = rgb2gray(initData)
+        multiC = False
+        colored = False
+    #graph cuts
+    #imageSegmentation(NAMESTODATA[dataName], algo='ap')
+
+    #random Walker
+    if not 'initData' in locals():
+        print('Usage : give the name of the input data in arg')
+        exit(0)
+
+    #run random walker
+    #initData = introduceNoise(initData, 0.4, colored)
+    data, markers = generateInput(initData, autoseed=False)
+    print(markers[0][0])
+    print(markers.shape)
+
+
+    #markers = np.loadtxt('./images/marked/markerselephant.txt')
+    #cv2.imwrite('./images/marked/markers' + dataName.split('/')[-1].split('.')[0] + '.jpg', markers)
+    '''toSave = np.zeros((markers.shape[0], markers.shape[1]), dtype=np.uint8)
+    for i, raw in enumerate(markers):
+        for j, cell in enumerate(raw):
+            toSave[i][j] = cell[0]
+
+    np.savetxt('./images/marked/markers' + dataName.split('/')[-1].split('.')[0] + '.txt', toSave, fmt='%i')
+    #markers = np.loadtxt('./images/marked/markers' + dataName.split('/')[-1].split('.')[0] + '.txt')'''
+    '''tempmark = np.loadtxt('markerstreet.txt')
+    markers = np.zeros((tempmark.shape[0], tempmark.shape[1], 3), dtype=np.uint8)
+    for i, raw in enumerate(tempmark):
+        for j, cell in enumerate(raw):
+            if cell> 0:
+                markers[i][j][0] = cell'''
+
+    '''markers = cv2.imread('./images/marked/hemen_markers2.jpg')
+    print(markers.shape)
+    data = cv2.resize(data, dsize=markers.shape[:2][::-1])
+    print(data.shape)'''
+
+
+
+    dispparam = 130 #default beta value
+    beta = -1 #will be updated...
+    while dispparam != beta:
+        beta = dispparam # ...here
+        rwmode = 'bf' if len(data.shape) < 3 else 'cg'
+        print('Running RW with beta = {}'.format(beta))
+        begin = time.time()
+        labels = random_walker(data, markers, mode=rwmode, beta=beta)
+        end = time.time()
+        print('LABELS SHAPE',labels.shape)
+        print("Running time : {:.4f}".format(end - begin))
+
+        '''seuil = skimage.filters.threshold_otsu(data)
+        labels[data < seuil] = 1
+        labels[data >= seuil] = 2'''
+
+        # display results
+        segmented, plMarkers, instances = toPlot(data, markers, labels)
+
+        #def plot_res(data, markers, labels, instances, algo, segparam):
+        dispparam = plot_res(data,
+                             dataName.split('/')[-1].split('.')[0],
+                             plMarkers,
+                             segmented,
+                             labels,
+                             instances,
+                             'RW',
+                             beta)
+
+    cv2.imwrite('/home/tdambrin/Documents/insa/pir/images/marked/markers.jpg', plMarkers)
+
+
+    #run watershed
+    '''compactness = 0
+    print('Running RW with compactness = {}'.format(compactness))
+    begin = time.time()
+    labelsW = watershed(data, markers=markers, compactness=compactness)
+    end = time.time()
+    print("Running time : {:.4f}".format(end - begin))
+    segmentedW, plMarkersW = toPlot(initData, markers, labelsW)
+    dispparam = plot_res(data, plMarkers, segmentedW, 'WD', compactness)'''
+    dispparam = 0 #default compactness value
+    compactness = -1
+    while dispparam != compactness:
+        if dispparam < 0:
+            raise ValueError('Cannot segment with compactness < 0')
+        compactness = dispparam
+        print('Running WS with compactness = {}'.format(compactness))
+        begin = time.time()
+        labelsW = watershed(data, markers=markers, compactness=compactness)
+        end = time.time()
+        print("Running time : {:.4f}".format(end - begin))
+        segmentedW, plMarkersW, instancesW = toPlot(data, markers, labelsW)
+        #def plot_res(data, markers, labels, instances, algo, segparam):
+        dispparam = plot_res(data,
+                             dataName.split('/')[-1].split('.')[0],
+                             plMarkersW,
+                             segmentedW,
+                             labelsW,
+                             instancesW,
+                             'WD',
+                             compactness)
