@@ -1,4 +1,4 @@
-# RandomWalker
+# RandomWalker (code)
 
 Implement the random walker algorithm of scikit-image.<br/>
 Seeding must be user-performed and can contain up to 5 labels (at least 2 required)<br/>
@@ -9,3 +9,8 @@ To seed the image with the graphical interface (requires accurate marking), foll
 - Press ENTER to seed with next label
 - Press DEL to seed with previous label
 - Press ECHAP to stop seeding
+
+# Graph based approaches for image segmentation
+
+The pdf file contains a brief state-of-the-art of graph based approaches. Featuring Random Walker, Graph-cuts and Watershed Cuts.
+Its objective is to present the overall principles and properties of these tree methods. It is in no way a complete graph based approaches analysis.
