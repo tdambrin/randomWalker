@@ -13,4 +13,4 @@ To seed the image with the graphical interface (requires accurate marking), foll
 # Graph based approaches for image segmentation
 
 The pdf file contains a brief state-of-the-art of graph based approaches. Featuring Random Walker, Graph-cuts and Watershed Cuts. <br/>
-Its objective is to present the overall principles and properties of these tree methods.<br/>It is in no way a complete graph based approaches analysis.
+Its objective is to introduce the overall principles and properties of these tree methods.<br/>It is in no way a complete graph based approaches analysis.

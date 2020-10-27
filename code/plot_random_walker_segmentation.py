@@ -598,7 +598,8 @@ if __name__ == '__main__':
                              'RW',
                              beta)
 
-    cv2.imwrite('/home/tdambrin/Documents/insa/pir/images/marked/markers.jpg', plMarkers)
+#    cv2.imwrite('./markers.jpg', plMarkers)
+#    cv2.imwrite('/home/tdambrin/Documents/insa/pir/images/marked/markers.jpg', plMarkers)
 
 
     #run watershed
@@ -610,6 +611,8 @@ if __name__ == '__main__':
     print("Running time : {:.4f}".format(end - begin))
     segmentedW, plMarkersW = toPlot(initData, markers, labelsW)
     dispparam = plot_res(data, plMarkers, segmentedW, 'WD', compactness)'''
+
+    '''
     dispparam = 0 #default compactness value
     compactness = -1
     while dispparam != compactness:
@@ -631,3 +634,4 @@ if __name__ == '__main__':
                              instancesW,
                              'WD',
                              compactness)
+'''
